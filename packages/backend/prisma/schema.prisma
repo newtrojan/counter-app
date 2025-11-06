@@ -1,0 +1,464 @@
+// Prisma Schema for Multi-tenant SaaS Platform
+// Multi-tenancy: Row-level tenant isolation via tenantId
+// RBAC: Role-Based Access Control with permissions
+// Audit: Complete audit trail with createdBy/updatedBy tracking
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "fullTextIndex"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// CORE TENANT MODEL
+// ============================================================================
+
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique // For subdomain/URL-based access (optional)
+  domain    String?  @unique // Custom domain support
+
+  // Subscription & Billing
+  plan      String   @default("free") // free, starter, pro, enterprise
+  status    String   @default("active") // active, suspended, cancelled
+  trialEndsAt DateTime?
+
+  // Metadata
+  settings  Json     @default("{}")
+  metadata  Json     @default("{}")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relations
+  users           User[]
+  roles           Role[]
+  permissions     Permission[]
+  apiKeys         ApiKey[]
+  auditLogs       AuditLog[]
+  subscriptions   Subscription[]
+  invitations     Invitation[]
+  webhooks        Webhook[]
+
+  @@map("tenants")
+  @@index([slug])
+  @@index([status])
+}
+
+// ============================================================================
+// USER & AUTHENTICATION
+// ============================================================================
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+
+  // Basic Info
+  email     String
+  username  String?
+  firstName String?  @map("first_name")
+  lastName  String?  @map("last_name")
+  avatar    String?
+
+  // Auth
+  password  String? // Hashed password (nullable for social auth only)
+  emailVerified Boolean @default(false) @map("email_verified")
+  emailVerifiedAt DateTime? @map("email_verified_at")
+
+  // Status
+  status    String   @default("active") // active, inactive, suspended
+  isStaff   Boolean  @default(false) @map("is_staff")
+  isSuperuser Boolean @default(false) @map("is_superuser")
+
+  // Metadata
+  metadata  Json     @default("{}")
+  lastLoginAt DateTime? @map("last_login_at")
+  lastLoginIp String? @map("last_login_ip")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Audit
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userRoles   UserRole[]
+  socialAuths SocialAuth[]
+  sessions    Session[]
+  auditLogs   AuditLog[]
+  apiKeys     ApiKey[]
+
+  @@unique([tenantId, email])
+  @@map("users")
+  @@index([tenantId])
+  @@index([email])
+  @@index([status])
+}
+
+model SocialAuth {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+
+  provider  String   // google, github, facebook, etc.
+  providerId String  @map("provider_id") // Provider's user ID
+
+  // OAuth Data
+  accessToken  String? @map("access_token")
+  refreshToken String? @map("refresh_token")
+  expiresAt    DateTime? @map("expires_at")
+
+  // Profile Data
+  profile   Json     @default("{}")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+  @@map("social_auths")
+  @@index([userId])
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+
+  token     String   @unique
+  refreshToken String? @unique @map("refresh_token")
+
+  expiresAt DateTime @map("expires_at")
+
+  // Session metadata
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ============================================================================
+// RBAC (Role-Based Access Control)
+// ============================================================================
+
+model Role {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+
+  name      String   // admin, user, manager, etc.
+  slug      String   // Unique identifier within tenant
+  description String?
+
+  // System vs Custom roles
+  isSystem  Boolean  @default(false) @map("is_system") // System roles cannot be deleted
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Audit
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userRoles      UserRole[]
+  rolePermissions RolePermission[]
+
+  @@unique([tenantId, slug])
+  @@map("roles")
+  @@index([tenantId])
+}
+
+model Permission {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String?  @map("tenant_id") @db.Uuid // Null for global permissions
+
+  resource  String   // users, posts, comments, etc.
+  action    String   // create, read, update, delete, manage
+  scope     String   @default("tenant") // tenant, own, all
+
+  description String?
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant         Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rolePermissions RolePermission[]
+
+  @@unique([tenantId, resource, action, scope])
+  @@map("permissions")
+  @@index([tenantId])
+  @@index([resource])
+}
+
+model UserRole {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Audit
+  createdBy String?  @map("created_by") @db.Uuid
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+  @@index([userId])
+  @@index([roleId])
+}
+
+model RolePermission {
+  id           String     @id @default(uuid()) @db.Uuid
+  roleId       String     @map("role_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
+
+  // Timestamps
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  // Audit
+  createdBy    String?    @map("created_by") @db.Uuid
+
+  // Relations
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+  @@index([roleId])
+  @@index([permissionId])
+}
+
+// ============================================================================
+// API KEYS
+// ============================================================================
+
+model ApiKey {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+
+  name      String
+  key       String   @unique // Hashed API key
+  prefix    String   // First 8 chars for identification (e.g., "sk_live_")
+
+  // Permissions
+  scopes    String[] @default([]) // Array of allowed scopes
+
+  // Status
+  isActive  Boolean  @default(true) @map("is_active")
+  expiresAt DateTime? @map("expires_at")
+  lastUsedAt DateTime? @map("last_used_at")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Audit
+  createdBy String?  @map("created_by") @db.Uuid
+
+  // Relations
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+  @@index([tenantId])
+  @@index([prefix])
+}
+
+// ============================================================================
+// AUDIT LOGS
+// ============================================================================
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+
+  // Event Details
+  action    String   // created, updated, deleted, login, etc.
+  resource  String   // users, roles, posts, etc.
+  resourceId String? @map("resource_id")
+
+  // Changes
+  oldValues Json?    @map("old_values")
+  newValues Json?    @map("new_values")
+
+  // Request Context
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  metadata  Json     @default("{}")
+
+  // Timestamp
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+  @@index([tenantId])
+  @@index([userId])
+  @@index([resource])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// SUBSCRIPTIONS & BILLING
+// ============================================================================
+
+model Subscription {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+
+  // Stripe/Payment Provider
+  stripeCustomerId String? @unique @map("stripe_customer_id")
+  stripeSubscriptionId String? @unique @map("stripe_subscription_id")
+  stripePriceId String? @map("stripe_price_id")
+
+  // Plan Details
+  plan      String   // free, starter, pro, enterprise
+  status    String   @default("active") // active, canceled, past_due, trialing
+
+  // Billing
+  currentPeriodStart DateTime @map("current_period_start")
+  currentPeriodEnd   DateTime @map("current_period_end")
+  cancelAtPeriodEnd  Boolean  @default(false) @map("cancel_at_period_end")
+  canceledAt         DateTime? @map("canceled_at")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+  @@index([tenantId])
+  @@index([status])
+}
+
+// ============================================================================
+// INVITATIONS
+// ============================================================================
+
+model Invitation {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+
+  email     String
+  roleId    String   @map("role_id") @db.Uuid
+
+  token     String   @unique
+  status    String   @default("pending") // pending, accepted, expired
+
+  expiresAt DateTime @map("expires_at")
+  acceptedAt DateTime? @map("accepted_at")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Audit
+  createdBy String   @map("created_by") @db.Uuid
+
+  // Relations
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("invitations")
+  @@index([tenantId])
+  @@index([email])
+  @@index([token])
+}
+
+// ============================================================================
+// WEBHOOKS
+// ============================================================================
+
+model Webhook {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+
+  url       String
+  events    String[] @default([]) // Array of event types to subscribe to
+  secret    String   // For signing webhook payloads
+
+  isActive  Boolean  @default(true) @map("is_active")
+
+  // Metadata
+  metadata  Json     @default("{}")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Audit
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@map("webhooks")
+  @@index([tenantId])
+}
+
+model WebhookDelivery {
+  id        String   @id @default(uuid()) @db.Uuid
+  webhookId String   @map("webhook_id") @db.Uuid
+
+  event     String   // Event type
+  payload   Json     // Event payload
+
+  // Delivery Status
+  status    String   @default("pending") // pending, success, failed
+  attempts  Int      @default(0)
+
+  // Response
+  responseStatus Int? @map("response_status")
+  responseBody   String? @map("response_body")
+  error          String?
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  deliveredAt DateTime? @map("delivered_at")
+  nextRetryAt DateTime? @map("next_retry_at")
+
+  // Relations
+  webhook   Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@map("webhook_deliveries")
+  @@index([webhookId])
+  @@index([status])
+  @@index([nextRetryAt])
+}

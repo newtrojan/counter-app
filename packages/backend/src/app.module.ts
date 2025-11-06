@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { CacheModule } from '@nestjs/cache-manager';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -11,7 +10,7 @@ import type { RedisClientOptions } from 'redis';
 
 import configuration from './config/configuration';
 import { validate } from './config/env.validation';
-import { getTypeOrmConfig } from './config/typeorm.config';
+import { PrismaModule } from './database/prisma.module';
 
 /**
  * App Module
@@ -26,7 +25,7 @@ import { getTypeOrmConfig } from './config/typeorm.config';
  * - Environment validation on startup
  * - Rate limiting configured
  * - Request context isolation (CLS)
- * - Database connection pooling
+ * - Prisma ORM with automatic tenant isolation
  * - Redis caching
  */
 @Module({
@@ -43,15 +42,11 @@ import { getTypeOrmConfig } from './config/typeorm.config';
     }),
 
     /**
-     * TypeORM Module
-     * Database connection with connection pooling
-     * Security: SSL support, connection limits
+     * Prisma Module
+     * Database ORM with automatic tenant isolation
+     * Security: Query middleware for tenant scoping, soft deletes
      */
-    TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => getTypeOrmConfig(configService),
-    }),
+    PrismaModule,
 
     /**
      * Cache Module (Redis)

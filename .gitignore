@@ -64,6 +64,10 @@ pids
 *.sqlite3
 *.db
 
+# Prisma
+**/node_modules/.prisma/
+**/prisma/migrations/**/migration.sql
+
 # Uploads
 uploads/
 tmp/
