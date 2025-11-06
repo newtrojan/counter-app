@@ -1,337 +1,335 @@
-# NestJS SaaS Boilerplate 🚀
+# NestJS SaaS Platform 🚀
 
-Enterprise-grade, production-ready NestJS boilerplate for building multi-tenant SaaS applications with authentication, RBAC, payments, observability, and more.
+Enterprise-grade, production-ready **full-stack SaaS platform** with NestJS backend and React 19 frontend.
 
-## ✨ Features
+## 📁 Project Structure
 
-### 🏢 Multi-Tenancy
-- **Hybrid tenant isolation**: Token-based (primary) + Header-based (fallback)
-- **Request context isolation** using CLS (Continuation Local Storage)
-- **Tenant guards** preventing cross-tenant data access
-- **Automatic tenant scoping** for all database queries
+```
+/
+├── packages/
+│   ├── backend/          # NestJS API (Independent)
+│   └── frontend/         # React 19 + Vite (Independent)
+├── ARCHITECTURE.md       # Backend architecture
+├── FRONTEND_SETUP.md     # Frontend setup guide
+└── README.md            # This file
+```
 
-### 🔐 Security
-- **JWT authentication** with refresh tokens
-- **RBAC (Role-Based Access Control)** using CASL
-- **Social OAuth** (Google, GitHub)
-- **Security headers** via Helmet
-- **Rate limiting** with Redis backing
-- **API key authentication** for webhooks
-- **CORS configuration**
-- **Input validation** with class-validator
-- **SQL injection prevention** via TypeORM
-- **Audit logging** for compliance
-- **Password hashing** with bcrypt
-
-### 📊 Observability
-- **OpenTelemetry** integration
-- **Distributed tracing** with Jaeger
-- **Metrics collection** with Prometheus
-- **Visualization** with Grafana
-- **Structured logging** with Winston
-- **Request/response logging**
-- **Health checks** (database, Redis, custom)
-
-### 💳 Payments
-- **Stripe integration** (ready to implement)
-- **Webhook handling** with signature verification
-- **Subscription management** support
-
-### 📧 Communication
-- **Email service** with templates (Nodemailer)
-- **Transactional emails** (verification, password reset)
-- **Queue-based sending** via Bull
-
-### 📁 File Storage
-- **S3-compatible storage** (AWS S3, MinIO)
-- **File upload/download**
-- **Image processing** with Sharp
-
-### 🔄 Background Jobs
-- **Bull/BullMQ** for job processing
-- **Cron jobs** via @nestjs/schedule
-- **Event-driven architecture** with EventEmitter
-
-### 🌐 Additional Features
-- **WebSocket support** (Socket.io)
-- **API versioning**
-- **Swagger documentation**
-- **Docker support**
-- **Database migrations**
-- **Seeding support**
-- **Testing infrastructure**
+**Each package is completely independent** and can be moved to its own repository later.
 
 ---
 
-## 🏗️ Architecture
+## 🎯 Tech Stack
 
-```
-src/
-├── common/               # Shared utilities
-│   ├── constants/       # Application constants
-│   ├── decorators/      # Custom decorators (@CurrentUser, @Roles, etc.)
-│   ├── guards/          # Security guards (JWT, Tenant, Roles, API Key)
-│   ├── interceptors/    # Logging, Audit, Transform
-│   ├── middleware/      # Tenant, Logger middleware
-│   ├── filters/         # Exception filters
-│   └── pipes/           # Validation pipes
-├── config/              # Configuration
-│   ├── configuration.ts # Config factory
-│   ├── env.validation.ts # Environment validation
-│   └── typeorm.config.ts # Database config
-├── database/
-│   ├── entities/        # Base entities
-│   ├── migrations/      # TypeORM migrations
-│   ├── seeds/           # Database seeders
-│   └── subscribers/     # TypeORM subscribers
-└── modules/
-    ├── auth/            # Authentication
-    ├── users/           # User management
-    ├── tenants/         # Tenant management
-    ├── rbac/            # Roles & Permissions
-    ├── audit/           # Audit logging
-    ├── health/          # Health checks
-    ├── payments/        # Stripe integration
-    ├── webhooks/        # Webhook handlers
-    ├── email/           # Email service
-    ├── storage/         # File storage
-    └── jobs/            # Background jobs
-```
+### Backend (`packages/backend`)
+- **NestJS** - Enterprise Node.js framework
+- **TypeScript** - Type safety
+- **PostgreSQL** - Database with TypeORM
+- **Redis** - Caching & sessions
+- **JWT** - Authentication
+- **CASL** - RBAC authorization
+- **OpenTelemetry** - Observability
+- **Docker** - Containerization
+
+### Frontend (`packages/frontend`)
+- **React 19** - Latest React
+- **TypeScript** - Type safety
+- **Vite** - Build tool
+- **TanStack Query** - API state management
+- **Zustand** - Global state
+- **React Hook Form + Zod** - Forms & validation
+- **Tailwind CSS + shadcn/ui** - Styling
+- **React Router v6** - Routing
+- **Axios** - HTTP client with auth
+
+---
+
+## ✨ Features
+
+### 🔐 Security
+- **Multi-tenancy** with token-based isolation
+- **JWT authentication** with automatic refresh
+- **RBAC** (Role-Based Access Control)
+- **Protected routes** with role checks
+- **Zod validation** on all forms
+- **Security headers** (Helmet)
+- **Rate limiting** (Redis-backed)
+- **Audit logging**
+
+### 🏢 Multi-Tenancy
+- Token-based (primary) + Header-based (fallback)
+- Request context isolation (CLS)
+- Tenant guards preventing cross-tenant access
+- Automatic tenant scoping for queries
+
+### 📊 Observability
+- OpenTelemetry tracing
+- Jaeger UI
+- Prometheus metrics
+- Grafana dashboards
+- Winston logging
+
+### 💼 Business Features
+- User management
+- Role & permission management
+- Dashboard (User & Admin)
+- Profile & settings pages
+- Email notifications (ready)
+- Payment integration (Stripe ready)
 
 ---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
+- Node.js >= 18
+- PostgreSQL >= 15
+- Redis >= 7
+- Docker (recommended)
 
-- **Node.js** >= 18.x
-- **PostgreSQL** >= 15.x
-- **Redis** >= 7.x
-- **Docker** (optional, recommended)
+### 1. Install Dependencies
 
-### Installation
-
-1. **Clone the repository**
+**Backend:**
 ```bash
-git clone <your-repo-url>
-cd nestjs-saas-boilerplate
-```
-
-2. **Install dependencies**
-```bash
+cd packages/backend
 npm install
 ```
 
-3. **Start infrastructure** (PostgreSQL, Redis, Jaeger, Prometheus, Grafana)
+**Frontend:**
 ```bash
+cd packages/frontend
+npm install
+```
+
+### 2. Start Infrastructure (Docker)
+
+```bash
+cd packages/backend
 docker-compose up -d
 ```
 
-4. **Configure environment**
+This starts:
+- PostgreSQL (5432)
+- Redis (6379)
+- Jaeger (16686)
+- Prometheus (9090)
+- Grafana (3001)
+
+### 3. Configure Environment
+
+**Backend** (`packages/backend/.env`):
 ```bash
-# .env file is already created with development defaults
-# Update the values as needed
+# Copy example
+cp .env.example .env
+
+# Update these values
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_USERNAME=postgres
+DATABASE_PASSWORD=postgres
+DATABASE_NAME=nestjs_saas
+
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+JWT_SECRET=your-super-secret-jwt-key
+JWT_REFRESH_SECRET=your-super-secret-refresh-key
 ```
 
-5. **Run database migrations**
+**Frontend** (`packages/frontend/.env`):
 ```bash
+VITE_API_URL=http://localhost:3000/api/v1
+```
+
+### 4. Run Migrations
+
+```bash
+cd packages/backend
 npm run migration:run
 ```
 
-6. **Seed database** (optional)
+### 5. Start Development Servers
+
+**From root:**
 ```bash
-npm run seed
+# Backend only
+npm run backend:dev
+
+# Frontend only
+npm run frontend:dev
 ```
 
-7. **Start development server**
+**Or run each independently:**
 ```bash
-npm run start:dev
+# Terminal 1 - Backend
+cd packages/backend
+npm run dev
+
+# Terminal 2 - Frontend
+cd packages/frontend
+npm run dev
 ```
 
-The API will be available at:
-- **API**: http://localhost:3000/api/v1
+### 6. Access Applications
+
+- **Frontend**: http://localhost:3001
+- **Backend API**: http://localhost:3000/api/v1
 - **Swagger Docs**: http://localhost:3000/docs
-- **Jaeger UI**: http://localhost:16686
-- **Prometheus**: http://localhost:9090
+- **Jaeger**: http://localhost:16686
 - **Grafana**: http://localhost:3001 (admin/admin)
+
+---
+
+## 📚 Documentation
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Backend architecture, entities, security
+- **[FRONTEND_SETUP.md](FRONTEND_SETUP.md)** - Frontend setup, components, pages
 
 ---
 
 ## 🔒 Security Architecture
 
-### Multi-Tenancy Isolation
-
-```typescript
-// 1. Tenant Context Extraction (TenantMiddleware)
-Request → Extract tenant from JWT/Header/Slug → Store in CLS
-
-// 2. Tenant Validation (TenantGuard)
-Request → Verify tenant exists and active → Prevent cross-tenant access
-
-// 3. Automatic Tenant Scoping (BaseRepository)
-Query → Auto-inject tenantId filter → Return only tenant's data
-```
-
 ### Authentication Flow
+1. User logs in → Backend validates credentials
+2. Backend returns JWT access token + refresh token
+3. Frontend stores tokens securely
+4. Frontend includes token in all requests
+5. Backend validates token on each request
+6. Token expires → Auto-refresh via interceptor
 
+### Multi-Tenancy
+- Tenant ID extracted from JWT
+- TenantMiddleware sets context
+- TenantGuard validates access
+- All queries automatically scoped to tenant
+
+### Protected Routes
 ```typescript
-// 1. Login
-POST /api/v1/auth/login
-{ email, password } → Validate credentials → Return { accessToken, refreshToken }
+// Frontend
+<Route element={<ProtectedRoute><Dashboard /></ProtectedRoute>}>
+<Route element={<AdminRoute><AdminPanel /></AdminRoute>}>
 
-// 2. Access Protected Route
-GET /api/v1/users/profile
-Headers: { Authorization: "Bearer <accessToken>" }
-→ JwtAuthGuard validates token
-→ TenantGuard validates tenant
-→ Return user data
-
-// 3. Refresh Token
-POST /api/v1/auth/refresh
-{ refreshToken } → Validate refresh token → Return new accessToken
-```
-
-### RBAC (Role-Based Access Control)
-
-```typescript
-// Using decorators for access control
-@Roles(UserRole.ADMIN)
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Delete(':id')
-async deleteUser(@Param('id') id: string) {
-  // Only admins can access
-}
-
-@Permissions(Permission.USERS_DELETE)
-@UseGuards(JwtAuthGuard, PermissionsGuard)
-@Delete(':id')
-async deleteUser(@Param('id') id: string) {
-  // Fine-grained permission check
-}
-```
-
----
-
-## 🧪 Testing
-
-```bash
-# Unit tests
-npm run test
-
-# E2E tests
-npm run test:e2e
-
-# Test coverage
-npm run test:cov
+// Backend
+@UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
+@Roles('admin')
 ```
 
 ---
 
 ## 📦 Building for Production
 
+**Backend:**
 ```bash
-# Build
+cd packages/backend
 npm run build
-
-# Run production server
 npm run start:prod
 ```
 
-### Docker Build
-
+**Frontend:**
 ```bash
-# Build image
-docker build -t nestjs-saas-api .
-
-# Run container
-docker run -p 3000:3000 --env-file .env nestjs-saas-api
+cd packages/frontend
+npm run build
+# Outputs to packages/frontend/dist
 ```
 
 ---
 
-## 🔐 Environment Variables
+## 🧪 Testing
 
-See `.env.example` for all available configuration options.
-
-**Critical variables for production:**
-
+**Backend:**
 ```bash
-# Security
-JWT_SECRET=<strong-random-secret-min-32-chars>
-JWT_REFRESH_SECRET=<strong-random-secret-min-32-chars>
-SESSION_SECRET=<strong-random-secret-min-32-chars>
-BCRYPT_ROUNDS=12
+cd packages/backend
+npm run test          # Unit tests
+npm run test:e2e      # E2E tests
+npm run test:cov      # Coverage
+```
 
-# Database
-DATABASE_SSL=true
-DATABASE_SYNCHRONIZE=false
-
-# Application
-NODE_ENV=production
-CORS_ORIGIN=https://yourdomain.com
+**Frontend:**
+```bash
+cd packages/frontend
+npm run test
 ```
 
 ---
 
-## 📚 API Documentation
+## 📝 Key Files Reference
 
-Once the server is running, visit:
+### Backend
+- `packages/backend/src/main.ts` - Application entry
+- `packages/backend/src/app.module.ts` - Root module
+- `packages/backend/src/common/guards/` - Security guards
+- `packages/backend/src/database/entities/` - Database entities
+- `packages/backend/docker-compose.yml` - Infrastructure
 
-- **Swagger UI**: http://localhost:3000/docs
-- **OpenAPI JSON**: http://localhost:3000/docs-json
-
----
-
-## 🧩 SOLID Principles Implementation
-
-This boilerplate strictly follows SOLID principles:
-
-### Single Responsibility
-- Each class has one reason to change
-- Guards only handle authorization
-- Services only handle business logic
-- Repositories only handle data access
-
-### Open/Closed
-- Guards can be extended without modification
-- Strategies can be added for new OAuth providers
-- New modules can be added without changing existing code
-
-### Liskov Substitution
-- All entities can replace BaseEntity
-- All tenant-scoped entities can replace TenantScopedEntity
-
-### Interface Segregation
-- Small, focused interfaces
-- Decorators for specific purposes
-- Guards implement specific interfaces
-
-### Dependency Inversion
-- Depend on abstractions (ConfigService, not process.env)
-- Inject dependencies, don't create them
-- Use NestJS dependency injection throughout
+### Frontend
+- `packages/frontend/src/main.tsx` - React entry
+- `packages/frontend/src/App.tsx` - Routing
+- `packages/frontend/src/lib/api-client.ts` - HTTP client with auth
+- `packages/frontend/src/store/auth-store.ts` - Auth state
+- `packages/frontend/src/pages/` - All pages
 
 ---
 
-## 🔒 Security Best Practices
+## 🔄 Moving to Separate Repos
 
-1. **Never commit secrets** - Use environment variables
-2. **Validate all inputs** - Use DTOs with class-validator
-3. **Sanitize outputs** - Transform interceptor, exclude sensitive fields
-4. **Rate limiting** - Prevent brute force attacks
-5. **SQL injection prevention** - Use TypeORM parameterized queries
-6. **XSS prevention** - Helmet middleware, input validation
-7. **CSRF protection** - Enable in production if using cookies
-8. **Audit logging** - Track all important actions
-9. **Least privilege** - Use RBAC, grant minimum permissions
-10. **Regular updates** - Keep dependencies updated
+When ready to split into separate repositories:
+
+```bash
+# Backend
+cd packages/backend
+git init
+git add .
+git commit -m "Initial backend"
+git remote add origin <backend-repo-url>
+git push -u origin main
+
+# Frontend
+cd packages/frontend
+git init
+git add .
+git commit -m "Initial frontend"
+git remote add origin <frontend-repo-url>
+git push -u origin main
+```
+
+Update API URL in frontend `.env`:
+```bash
+VITE_API_URL=https://api.yourdomain.com/api/v1
+```
 
 ---
 
-## 📝 License
+## 🤝 Contributing
 
-MIT License - feel free to use this boilerplate for your projects!
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Open a Pull Request
 
 ---
 
-**Happy coding! 🎉**
+## 📄 License
+
+MIT License - feel free to use for your projects!
+
+---
+
+## 🎉 What's Included
+
+✅ **Backend** - Enterprise NestJS API with multi-tenancy, RBAC, security
+✅ **Frontend** - Modern React 19 with TypeScript, forms, routing
+✅ **Authentication** - JWT with automatic refresh, protected routes
+✅ **Authorization** - RBAC with guards, role checks
+✅ **Database** - PostgreSQL with TypeORM, migrations
+✅ **Caching** - Redis for sessions, rate limiting
+✅ **Observability** - OpenTelemetry, Jaeger, Prometheus, Grafana
+✅ **Validation** - class-validator (backend), Zod (frontend)
+✅ **API Client** - Axios with interceptors, auto-retry
+✅ **UI Components** - shadcn/ui, Tailwind CSS
+✅ **Forms** - React Hook Form with Zod validation
+✅ **State Management** - Zustand (simple, powerful)
+✅ **Routing** - React Router with protected routes
+✅ **Docker** - Complete infrastructure setup
+✅ **Documentation** - Comprehensive guides
+
+**Ready to build your SaaS! 🚀**
