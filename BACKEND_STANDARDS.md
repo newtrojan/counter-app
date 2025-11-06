@@ -14,7 +14,6 @@ src/
 ├── modules/
 │   ├── auth/
 │   │   ├── dto/              # Data Transfer Objects
-│   │   ├── entities/         # TypeORM entities
 │   │   ├── guards/           # Auth-specific guards
 │   │   ├── strategies/       # Passport strategies
 │   │   ├── auth.controller.ts
@@ -22,7 +21,6 @@ src/
 │   │   └── auth.module.ts
 │   ├── users/
 │   │   ├── dto/
-│   │   ├── entities/
 │   │   ├── users.controller.ts
 │   │   ├── users.service.ts
 │   │   └── users.module.ts
@@ -37,10 +35,12 @@ src/
 │   └── constants/            # Application constants
 ├── config/                   # Configuration
 ├── database/
-│   ├── entities/             # Base entities
-│   ├── migrations/           # TypeORM migrations
-│   ├── seeds/                # Database seeders
-│   └── subscribers/          # TypeORM subscribers
+│   ├── prisma.service.ts     # Prisma service
+│   └── prisma.module.ts      # Prisma module
+├── prisma/
+│   ├── schema.prisma         # Prisma schema
+│   ├── migrations/           # Prisma migrations
+│   └── seed.ts               # Database seeder
 └── main.ts                   # Application entry
 ```
 
@@ -61,18 +61,17 @@ src/
 ```typescript
 // users.module.ts
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
-import { User } from './entities/user.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User])],
   controllers: [UsersController],
   providers: [UsersService],
   exports: [UsersService], // Export if used by other modules
 })
 export class UsersModule {}
+
+// Note: PrismaModule is global, so no need to import it in feature modules
 ```
 
 ### **2. Controller Pattern**
@@ -188,42 +187,53 @@ export class UsersController {
 ```typescript
 // users.service.ts
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { User } from './entities/user.entity';
+import { PrismaService } from '@/database/prisma.service';
+import { User } from '@prisma/client';
 import { CreateUserDto, UpdateUserDto } from './dto';
 import * as bcrypt from 'bcrypt';
 
 /**
  * Users Service
  * Business logic for user operations
- * Security: All queries are tenant-scoped
+ * Security: All queries are tenant-scoped via Prisma middleware
  */
 @Injectable()
 export class UsersService {
   constructor(
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
    * Find all users in tenant
-   * Security: Automatically filters by tenantId
+   * Security: Automatically filters by tenantId via Prisma middleware
    */
-  async findAll(tenantId: string): Promise<User[]> {
-    return this.userRepository.find({
-      where: { tenantId },
-      order: { createdAt: 'DESC' },
+  async findAll(): Promise<User[]> {
+    return this.prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        userRoles: {
+          include: {
+            role: true,
+          },
+        },
+      },
     });
   }
 
   /**
    * Find user by ID
-   * Security: Validates user belongs to tenant
+   * Security: Validates user belongs to tenant via Prisma middleware
    */
-  async findOne(id: string, tenantId: string): Promise<User> {
-    const user = await this.userRepository.findOne({
-      where: { id, tenantId },
+  async findOne(id: string): Promise<User> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        userRoles: {
+          include: {
+            role: true,
+          },
+        },
+      },
     });
 
     if (!user) {
@@ -458,33 +468,60 @@ user.password = password;
 
 #### ✅ Never Return Passwords
 ```typescript
-// user.entity.ts
+// Use class-transformer in DTOs
 import { Exclude } from 'class-transformer';
 
-export class User extends BaseEntity {
+export class UserResponseDto {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+
   @Exclude() // Never expose in API responses
-  @Column({ name: 'password_hash' })
-  passwordHash: string;
+  password: string;
 }
+
+// Or exclude in Prisma select
+const user = await this.prisma.user.findUnique({
+  where: { id },
+  select: {
+    id: true,
+    email: true,
+    firstName: true,
+    lastName: true,
+    // password is excluded by not selecting it
+  },
+});
 ```
 
 ### **5. SQL Injection Prevention**
 
-#### ✅ Use Parameterized Queries (TypeORM)
+#### ✅ Use Prisma (Automatic Protection)
 ```typescript
-// ✅ Good - Parameterized (safe)
-const user = await this.userRepository.findOne({
+// ✅ Good - Prisma automatically parameterizes all queries (safe)
+const user = await this.prisma.user.findUnique({
   where: { email: userEmail },
 });
 
-// ✅ Good - Query builder (parameterized)
-const users = await this.userRepository
-  .createQueryBuilder('user')
-  .where('user.email = :email', { email: userEmail })
-  .getMany();
+// ✅ Good - Complex queries are still safe
+const users = await this.prisma.user.findMany({
+  where: {
+    AND: [
+      { email: { contains: searchTerm } },
+      { status: 'active' },
+    ],
+  },
+});
 
-// ❌ Bad - String concatenation (SQL injection!)
-const users = await this.userRepository.query(
+// ⚠️  Use raw queries only when absolutely necessary
+// Prisma still parameterizes raw queries
+const users = await this.prisma.$queryRaw`
+  SELECT * FROM users WHERE email = ${userEmail}
+`;
+
+// ❌ Bad - Never use string interpolation in raw queries!
+// This is vulnerable to SQL injection
+const users = await this.prisma.$queryRawUnsafe(
   `SELECT * FROM users WHERE email = '${userEmail}'`
 );
 ```
@@ -509,38 +546,55 @@ async login(@Body() dto: LoginDto) { ... }
 
 ---
 
-## 🗃️ Database Standards
+## 🗃️ Database Standards (Prisma)
 
-### **1. Entity Design**
+### **1. Schema Design**
 
-#### ✅ Extend Base Entities
-```typescript
-// ✅ Good - Extends TenantScopedEntity for multi-tenancy
-export class User extends TenantScopedEntity {
-  @Column()
-  email: string;
+#### ✅ Define Models with Multi-Tenancy
+```prisma
+// prisma/schema.prisma
 
-  // tenantId, createdAt, updatedAt, deletedAt inherited
-}
+// ✅ Good - Model with tenant isolation
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  email     String
 
-// ✅ Good - Use BaseEntity for non-tenant data
-export class Role extends BaseEntity {
-  @Column()
-  name: string;
+  // Timestamps (automatically handled)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
 
-  // id, createdAt, updatedAt, deletedAt inherited
+  // Audit fields
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@map("users")
+  @@index([tenantId])
+  @@index([email])
 }
 ```
 
-#### ✅ Use Indexes
-```typescript
-@Entity('users')
-@Index(['email'], { unique: true })
-@Index(['tenantId'])
-@Index(['tenantId', 'email'], { unique: true })
-export class User extends TenantScopedEntity {
-  @Column({ unique: true })
-  email: string;
+#### ✅ Use Indexes and Constraints
+```prisma
+model User {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  email    String
+
+  // Unique constraint within tenant
+  @@unique([tenantId, email])
+
+  // Indexes for performance
+  @@index([tenantId])
+  @@index([email])
+  @@index([status])
+
+  @@map("users")
 }
 ```
 
@@ -548,48 +602,76 @@ export class User extends TenantScopedEntity {
 
 #### ✅ Create Migration for Schema Changes
 ```bash
-npm run typeorm migration:generate -- src/database/migrations/AddUserPhoneNumber
-npm run typeorm migration:run
+# After modifying schema.prisma
+npm run prisma:migrate      # Creates and applies migration
+npm run prisma:migrate:deploy # Deploy to production
+
+# For development without migration history
+npm run db:push
 ```
 
-#### ✅ Migration Example
-```typescript
-import { MigrationInterface, QueryRunner } from 'typeorm';
+#### ✅ Migration Workflow
+```bash
+# 1. Edit schema.prisma
+# 2. Create migration
+npx prisma migrate dev --name add_user_phone_number
 
-export class AddUserPhoneNumber1234567890 implements MigrationInterface {
-  public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `ALTER TABLE "users" ADD "phone_number" varchar(50) NULL`
-    );
-  }
+# This will:
+# - Create migration file
+# - Apply migration to database
+# - Regenerate Prisma Client
+```
 
-  public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `ALTER TABLE "users" DROP COLUMN "phone_number"`
-    );
-  }
-}
+#### ✅ Prisma Migration Example
+```sql
+-- Migration file: prisma/migrations/20240101000000_add_user_phone_number/migration.sql
+-- AddUserPhoneNumber
+
+-- AlterTable
+ALTER TABLE "users" ADD COLUMN "phone_number" VARCHAR(50);
+
+-- CreateIndex (if needed)
+CREATE INDEX "users_phone_number_idx" ON "users"("phone_number");
 ```
 
 ### **3. Transactions**
 
-#### ✅ Use Transactions for Multi-Step Operations
+#### ✅ Use Prisma Transactions for Multi-Step Operations
 ```typescript
-async createUserWithRole(dto: CreateUserDto, roleId: string): Promise<User> {
-  return this.dataSource.transaction(async (manager) => {
+async createUserWithRole(dto: CreateUserDto, roleId: string) {
+  return this.prisma.$transaction(async (tx) => {
     // Create user
-    const user = manager.create(User, dto);
-    await manager.save(user);
+    const user = await tx.user.create({
+      data: {
+        email: dto.email,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        password: await bcrypt.hash(dto.password, 10),
+      },
+    });
 
     // Assign role
-    const userRole = manager.create(UserRole, {
-      userId: user.id,
-      roleId,
+    await tx.userRole.create({
+      data: {
+        userId: user.id,
+        roleId,
+      },
     });
-    await manager.save(userRole);
 
     return user;
   });
+}
+
+// ✅ Alternative: Sequential operations with automatic rollback
+async createUserWithRole(dto: CreateUserDto, roleId: string) {
+  return this.prisma.$transaction([
+    this.prisma.user.create({
+      data: { ...dto, password: await bcrypt.hash(dto.password, 10) },
+    }),
+    this.prisma.userRole.create({
+      data: { userId: user.id, roleId },
+    }),
+  ]);
 }
 ```
 
@@ -667,65 +749,94 @@ this.logger.log(`Login attempt: ${email} / ${password}`);
 
 ## 🧪 Testing Standards
 
-### **1. Unit Test Structure**
+### **1. Unit Test Structure (with Prisma)**
 ```typescript
 // users.service.spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { PrismaService } from '@/database/prisma.service';
 import { UsersService } from './users.service';
-import { User } from './entities/user.entity';
 
 describe('UsersService', () => {
   let service: UsersService;
-  let repository: MockRepository<User>;
+  let prisma: MockPrismaService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UsersService,
         {
-          provide: getRepositoryToken(User),
-          useValue: mockRepository(),
+          provide: PrismaService,
+          useValue: mockPrismaService(),
         },
       ],
     }).compile();
 
     service = module.get<UsersService>(UsersService);
-    repository = module.get(getRepositoryToken(User));
+    prisma = module.get(PrismaService);
   });
 
   describe('findOne', () => {
     it('should return a user', async () => {
-      const user = { id: '1', email: 'test@example.com' };
-      repository.findOne.mockResolvedValue(user);
+      const mockUser = {
+        id: '1',
+        email: 'test@example.com',
+        tenantId: 'tenant-1',
+        firstName: 'Test',
+        lastName: 'User',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
 
-      const result = await service.findOne('1', 'tenant-1');
+      prisma.user.findUnique.mockResolvedValue(mockUser);
 
-      expect(result).toEqual(user);
-      expect(repository.findOne).toHaveBeenCalledWith({
-        where: { id: '1', tenantId: 'tenant-1' },
+      const result = await service.findOne('1');
+
+      expect(result).toEqual(mockUser);
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: '1' },
+        include: {
+          userRoles: {
+            include: {
+              role: true,
+            },
+          },
+        },
       });
     });
 
     it('should throw NotFoundException if user not found', async () => {
-      repository.findOne.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne('1', 'tenant-1')).rejects.toThrow(
+      await expect(service.findOne('1')).rejects.toThrow(
         NotFoundException,
       );
     });
   });
 });
 
-function mockRepository() {
+// Mock PrismaService with common methods
+function mockPrismaService() {
   return {
-    find: jest.fn(),
-    findOne: jest.fn(),
-    save: jest.fn(),
-    create: jest.fn(),
-    remove: jest.fn(),
+    user: {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
+    tenant: {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    $transaction: jest.fn(),
+    $queryRaw: jest.fn(),
+    $executeRaw: jest.fn(),
   };
 }
+
+type MockPrismaService = ReturnType<typeof mockPrismaService>;
 ```
 
 ### **2. E2E Test Structure**
